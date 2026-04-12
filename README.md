@@ -1,7 +1,7 @@
 # fabiato-calcium-calculator
 Browser-based calculator for calcium buffering solutions based on the Fabiato framework
 
-Fabiato Calcium Solution Calculator is a browser-based research tool for calculating calcium-buffered solutions. It runs entirely in the browser using Pyodide and implements a Fabiato-based calculation framework for ionic composition, buffering, and free ion concentrations. The software is adapted by Ger Stienen, PhD, and Vasco Sequeira, PhD, for research use.
+Fabiato Calcium Solution Calculator is a browser-based research tool for calculating calcium-buffered solutions. It runs entirely in the browser using Pyodide and implements a Fabiato-based calculation framework for ionic composition, buffering, and free ion concentrations. The software is adapted by Ger Stienen & and Vasco Sequeira, for research use.
 
 ## Features
 
