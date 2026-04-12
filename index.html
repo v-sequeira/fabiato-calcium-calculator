@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fabiato – Calcium Solution Calculator</title>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<style>
+  :root {
+    --bg: #f4f6f9; --card: #fff; --border: #dde3ec;
+    --accent: #1a56a0; --accent2: #0d3d72;
+    --text: #222; --muted: #666; --ok: #1a7a3c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: var(--bg);
+         color: var(--text); font-size: 14px; }
+  h1  { font-size: 1.25rem; color: #fff; }
+  h2  { font-size: 0.85rem; text-transform: uppercase; letter-spacing: .06em;
+         color: var(--muted); margin-bottom: .55rem; }
+  header { background: var(--accent2); color: #fff; padding: 14px 24px; }
+  header p { font-size: .78rem; opacity: .7; margin-top: 3px; }
+  main { max-width: 1060px; margin: 0 auto; padding: 20px 16px; }
+
+  .grid { display: grid; grid-template-columns: 410px 1fr; gap: 18px; align-items: start; }
+  @media(max-width:780px){ .grid { grid-template-columns:1fr; } }
+
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: 8px; padding: 18px; }
+
+  .section { margin-bottom: 16px; }
+  label   { display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 6px; gap: 8px; }
+  label span { color: var(--muted); white-space: nowrap; min-width: 160px; }
+  input[type=number], select {
+    width: 112px; padding: 4px 7px; border: 1px solid var(--border);
+    border-radius: 4px; font-size: 13px; text-align: right; background: #fafbfc;
+  }
+  select { text-align: left; width: 120px; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px;
+                  margin-bottom: 6px; color: var(--muted); font-size: 13px; }
+  .checkbox-row input { width: auto; }
+
+  button#calc {
+    width: 100%; padding: 10px; background: var(--accent);
+    color: #fff; border: none; border-radius: 6px;
+    font-size: .95rem; cursor: pointer; margin-top: 6px; transition: background .15s;
+  }
+  button#calc:disabled { background: #6a90c0; cursor: default; }
+  button#calc:not(:disabled):hover { background: var(--accent2); }
+
+  #pyodide-status {
+    font-size: .8rem; color: var(--muted); text-align: center;
+    margin-top: 6px; min-height: 1.2em;
+  }
+
+  #results { display: none; }
+  .result-row { display: flex; justify-content: space-between;
+                padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .result-row:last-child { border-bottom: none; }
+  .lbl  { color: var(--muted); }
+  .val  { font-weight: 600; }
+  .hi   { color: var(--ok); font-size: 1.05em; }
+  .unit { font-weight: 400; color: var(--muted); font-size: .85em; margin-left: 2px; }
+
+  .additions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap: 6px; }
+  .add-item { background: #f4f7fb; border: 1px solid var(--border); border-radius: 5px;
+              padding: 6px 10px; display: flex; justify-content: space-between; font-size: 13px; }
+  .add-item .lbl { color: #444; }
+  .add-item .val { font-weight: 600; }
+
+  hr.sep { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+  #errbox { background: #fdf0f0; border: 1px solid #e8b0b0; color: #8b0000;
+            border-radius: 5px; padding: 8px 12px; margin-top: 8px;
+            font-size: 13px; display: none; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Fabiato Calcium Solution Calculator</h1>
+  <p>FabForWin algorithm · Fabiato &amp; Fabiato 1979 · Fabiato 1981, 1985 · Adapted by Ger Stienen, PhD &amp; Vasco Sequeira, PhD</p>
+</header>
+
+<main>
+<div class="grid">
+
+<!-- ─── INPUT ─── -->
+<div class="card">
+  <div class="section">
+    <h2>Solution conditions</h2>
+    <label><span>Temperature (°C)</span>  <input type="number" id="temperature" value="20"  step="1"></label>
+    <label><span>pH</span>                <input type="number" id="pH"          value="7.0"  step="0.1"></label>
+    <label><span>pCa</span>               <input type="number" id="pCa"         value="10"   step="0.5"></label>
+    <label><span>Free Mg (mM)</span>      <input type="number" id="free_Mg"     value="1.0"  step="0.1"></label>
+    <label><span>Target IS (mM)</span>    <input type="number" id="ion_EQ"      value="100"  step="1"></label>
+  </div>
+
+  <div class="section">
+    <h2>Nucleotides</h2>
+    <label><span>Mg·ATP (mM)</span>  <input type="number" id="MgATP" value="5.0" step="0.5"></label>
+    <label><span>Mg·ADP (mM)</span>  <input type="number" id="MgADP" value="0"   step="0.1"></label>
+  </div>
+
+  <div class="section">
+    <h2>Chelators (mM)</h2>
+    <label><span>EGTA</span>   <input type="number" id="EGTA"  value="20" step="1"></label>
+    <label><span>BAPTA</span>  <input type="number" id="BAPTA" value="0"  step="1"></label>
+    <label><span>HDTA</span>   <input type="number" id="HDTA"  value="0"  step="1"></label>
+    <label><span>PCr</span>    <input type="number" id="CrP"   value="0"  step="1"></label>
+    <label><span>PEP</span>    <input type="number" id="PEP"   value="10" step="1"></label>
+    <label><span>HPO₄ (mM)</span> <input type="number" id="HPO4" value="0" step="0.5"></label>
+  </div>
+
+  <div class="section">
+    <h2>Buffer &amp; Salts</h2>
+    <label><span>Buffer type</span>
+      <select id="buffer">
+        <option value="BES" selected>BES</option>
+        <option value="HEPES">HEPES</option>
+        <option value="MES">MES</option>
+        <option value="TES">TES</option>
+        <option value="Imidazol">Imidazole</option>
+      </select>
+    </label>
+    <label><span>Buffer conc. (mM)</span> <input type="number" id="buf_conc" value="100" step="5"></label>
+    <label><span>NaCl (mM)</span>         <input type="number" id="NaCl"     value="0"   step="5"></label>
+    <label><span>NaN₃ (mM)</span>         <input type="number" id="NaAzide"  value="5"   step="1"></label>
+  </div>
+
+  <div class="section">
+    <h2>Options</h2>
+    <div class="checkbox-row">
+      <input type="checkbox" id="no_ca_egta">
+      <label for="no_ca_egta" style="min-width:0">Add Ca as CaCl₂ (not CaEGTA)</label>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="use_hdta">
+      <label for="use_hdta" style="min-width:0">Use HDTA to adjust IS (not KCl)</label>
+    </div>
+  </div>
+
+  <button id="calc" onclick="calculate()" disabled>Loading Python…</button>
+  <div id="pyodide-status">Loading Pyodide runtime, please wait…</div>
+  <div id="errbox"></div>
+</div>
+
+<!-- ─── RESULTS ─── -->
+<div id="results" class="card">
+  <h2>Results</h2>
+
+  <div class="section">
+    <h2>Free ions</h2>
+    <div class="result-row"><span class="lbl">Free Ca²⁺</span> <span class="val hi" id="r_freeCa"></span></div>
+    <div class="result-row"><span class="lbl">Free Mg²⁺</span> <span class="val" id="r_freeMg"></span></div>
+    <div class="result-row"><span class="lbl">Free K⁺</span>   <span class="val" id="r_freeK"></span></div>
+    <div class="result-row"><span class="lbl">Free Na⁺</span>  <span class="val" id="r_freeNa"></span></div>
+  </div>
+
+  <div class="section">
+    <h2>Total ions</h2>
+    <div class="result-row"><span class="lbl">Total Ca²⁺</span> <span class="val" id="r_totCa"></span></div>
+    <div class="result-row"><span class="lbl">Total Mg²⁺</span> <span class="val" id="r_totMg"></span></div>
+    <div class="result-row"><span class="lbl">Total K⁺</span>   <span class="val" id="r_totK"></span></div>
+    <div class="result-row"><span class="lbl">Total Na⁺</span>  <span class="val" id="r_totNa"></span></div>
+    <div class="result-row"><span class="lbl">Total Cl⁻</span>  <span class="val" id="r_totCl"></span></div>
+  </div>
+
+  <div class="section">
+    <h2>Solution properties</h2>
+    <div class="result-row"><span class="lbl">Target IS</span>      <span class="val" id="r_ionEQ"></span></div>
+    <div class="result-row"><span class="lbl">Ionic strength</span> <span class="val" id="r_ionStr"></span></div>
+    <div class="result-row"><span class="lbl">Mg·ATP</span>         <span class="val" id="r_mgatp"></span></div>
+    <div class="result-row"><span class="lbl">Mg·ADP</span>         <span class="val" id="r_mgadp"></span></div>
+  </div>
+
+  <hr class="sep">
+  <h2>Additions required (mM)</h2>
+  <div id="additions-grid" class="additions-grid"></div>
+</div>
+
+</div><!-- /grid -->
+</main>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+//  Embedded Python – Fabiato compute() function
+// ══════════════════════════════════════════════════════════════════════════
+const PYTHON_CODE = `
+import math, json
+
+ACT_CONST = 1.8246e6
+R_BOLZ    = 1.987
+EPSILON   = [87.90, 83.96, 80.20, 76.60, 73.17, 69.88]
+
+METALS   = ('Ca', 'Mg', 'K', 'Na')
+VALENCE  = {'Ca': 2, 'Mg': 2, 'K': 1, 'Na': 1}
+LIGANDS  = ('ATP', 'ADP', 'HDTA', 'EGTA', 'BAPTA', 'CrP', 'HPO4', 'PEP')
+
+H_IN = {
+    'Na2ATPH2': 2, 'MgCl2': 0,  'Na2ADPH': 1, 'NaADPH2': 2,
+    'HDTAH4':   4, 'EGTAH4': 4,  'CaEGTAH2': 2, 'BAPTAH4': 4,
+    'Na2CrP':   0, 'KPEPH2': 2,  'KHPO4H': 1,
+    'CaCl2':    0, 'NaCl': 0,    'KCl': 0,  'HCl': 1,  'KOH': -1,
+    'NaAzide':  0, 'Imidazol': -1,
+    'MES': 1, 'BES': 1, 'TES': 1, 'HEPES': 1,
+}
+
+ADJUST_H_ADDS = (
+    'Na2ATPH2', 'MgCl2', 'Na2ADPH', 'NaADPH2', 'HDTAH4',
+    'EGTAH4', 'CaEGTAH2', 'BAPTAH4', 'Na2CrP', 'KPEPH2', 'KHPO4H',
+    'CaCl2', 'NaCl', 'KCl', 'HCl', 'KOH',
+)
+
+VL = {'ATP': 4, 'ADP': 3, 'HDTA': 4, 'EGTA': 4,
+      'BAPTA': 4, 'CrP': 2, 'HPO4': 2, 'PEP': 3}
+
+def pw(x):     return 10.0 ** x
+def ta(dH, T): return math.exp(dH / R_BOLZ * (1.0/293.0 - 1.0/(T+273.0)))
+def iea(an, cat, dl): return pw(2 * cat * an * dl)
+
+
+def compute(p):
+    T        = float(p.get('temperature', 20.0))
+    pH       = float(p.get('pH',          7.0))
+    pCa      = float(p.get('pCa',         10.0))
+    free_Mg  = float(p.get('free_Mg',     1e-3))
+    ion_EQ   = float(p.get('ion_EQ',      0.100))
+    MgATP    = float(p.get('MgATP',       5e-3))
+    MgADP    = float(p.get('MgADP',       0.0))
+
+    TL = {
+        'EGTA':  float(p.get('EGTA',  20e-3)),
+        'BAPTA': float(p.get('BAPTA', 0.0)),
+        'HDTA':  float(p.get('HDTA',  0.0)),
+        'CrP':   float(p.get('CrP',   0.0)),
+        'PEP':   float(p.get('PEP',   10e-3)),
+        'HPO4':  float(p.get('HPO4',  0.0)),
+        'ATP':   0.0,
+        'ADP':   0.0,
+    }
+
+    no_ca_egta = bool(p.get('no_ca_egta', False))
+    use_hdta   = bool(p.get('use_hdta',   False))
+    buffer     = str(p.get('buffer', 'BES'))
+    buf_conc   = float(p.get('buf_conc', 100e-3))
+    nacl       = float(p.get('NaCl',     0.0))
+    naazide    = float(p.get('NaAzide',  5e-3))
+
+    Free  = {'Ca': pw(-pCa), 'Mg': free_Mg, 'K': 0.0, 'Na': 0.0}
+    Total = {'Ca': 0.0, 'Mg': 0.0, 'K': 0.0, 'Na': 0.0}
+
+    Add = {k: 0.0 for k in H_IN}
+    Add['NaCl']    = nacl
+    Add['NaAzide'] = naazide
+    Add[buffer]    = buf_conc
+    Add['Na2CrP']  = TL['CrP']
+    Add['KPEPH2']  = TL['PEP']
+    Add['KHPO4H']  = TL['HPO4']
+    Add['BAPTAH4'] = TL['BAPTA']
+    if use_hdta:
+        Add['HDTAH4'] = TL['HDTA']
+
+    Klh  = {n: [0.0]*6 for n in LIGANDS}
+    LH   = {n: [0.0]*6 for n in LIGANDS}
+    FLH  = {n: 0.0 for n in LIGANDS}
+    FL   = {n: 0.0 for n in LIGANDS}
+    Stab = {n: {m: 0.0 for m in METALS} for n in LIGANDS}
+    Kmlh = {n: {m: 0.0 for m in METALS} for n in LIGANDS}
+    App  = {n: {m: 0.0 for m in METALS} for n in LIGANDS}
+    MLH  = {n: {m: [0.0, 0.0] for m in METALS} for n in LIGANDS}
+
+    for ln in ('EGTA', 'BAPTA', 'CrP', 'PEP'):
+        FL[ln] = TL[ln]
+    FL['HPO4'] = TL['HPO4']
+    if use_hdta:
+        FL['HDTA'] = TL['HDTA']
+
+    def logfi_at(I):
+        Ti  = T / 10.0
+        Tl  = min(int(Ti), 4)
+        EpT = (EPSILON[Tl] + (Ti-Tl)*(EPSILON[Tl+1]-EPSILON[Tl])) * (T+273)
+        return ACT_CONST / EpT / math.sqrt(EpT) * I * (1.0/(math.sqrt(I)+I) - 0.25)
+
+    dlogf  = 0.0
+    GammaT = 0.522932 * math.exp(0.0327016*T) + 4.015942
+    H = pw(-pH) / (0.145045*math.exp(-GammaT*ion_EQ)
+                   + 0.063546*math.exp(-43.97704*ion_EQ)
+                   + 0.695634)
+
+    pKa_buff = {
+        'HEPES':   7.83   - T*0.014,
+        'Imidazol':7.558  - T*0.02266,
+        'TES':     7.90   - T*0.02,
+        'BES':     7.50   - T*0.016,
+        'MES':     5.93   - T*0.011,
+    }
+    Stab_Buff = pw(pKa_buff.get(buffer, 7.5))
+    buf_IS = 0.0
+    buf_Hc = 0.0
+
+    def update_buffer():
+        nonlocal buf_IS, buf_Hc
+        f = H * Stab_Buff
+        if buffer == 'Imidazol':
+            f = 1.0 / f
+        buf_IS = Add[buffer] / (1.0 + f)
+        buf_Hc = H_IN.get(buffer, 0) * buf_IS
+
+    def fill_constants():
+        Klh['ATP'][1] = pw(6.52)*ta(-200,T)
+        Klh['ATP'][2] = pw(4.06)*ta(-3600,T)
+        Stab['ATP']['Ca'] = pw(3.77)*ta(-1000,T)
+        Kmlh['ATP']['Ca'] = pw(4.69)
+        Stab['ATP']['Mg'] = pw(4.06)*ta(4500,T)
+        Kmlh['ATP']['Mg'] = pw(4.55)*ta(2000,T)
+        Stab['ATP']['Na'] = pw(1.1)*ta(-200,T)
+        Stab['ATP']['K']  = pw(1.0)*ta(300,T)
+
+        Klh['ADP'][1] = pw(6.40)*ta(1300,T)
+        Klh['ADP'][2] = pw(4.96)*ta(-4100,T)
+        Stab['ADP']['Ca'] = pw(2.81)*ta(-1000,T)
+        Kmlh['ADP']['Ca'] = pw(5.16)*ta(-1000,T)
+        Stab['ADP']['Mg'] = pw(3.17)*ta(3200,T)
+        Kmlh['ADP']['Mg'] = pw(4.91)*ta(-1000,T)
+        Stab['ADP']['Na'] = pw(0.8)*ta(-1000,T)
+        Stab['ADP']['K']  = pw(0.7)*ta(-1000,T)
+
+        Klh['PEP'][1] = pw(6.35)
+        Klh['PEP'][2] = pw(3.40)
+        Stab['PEP']['Ca'] = pw(2.08)
+        Stab['PEP']['Mg'] = pw(2.26)
+        Stab['PEP']['K']  = pw(1.08)
+        Stab['PEP']['Na'] = 0.0
+
+        Klh['CrP'][1] = pw(4.58)
+        Klh['CrP'][2] = pw(2.70)
+        Stab['CrP']['Ca'] = pw(1.15)
+        Stab['CrP']['Mg'] = pw(1.30)
+        Stab['CrP']['K']  = 0.0
+        Stab['CrP']['Na'] = 0.0
+
+        Klh['HDTA'][1] = pw(10.81)
+        Klh['HDTA'][2] = pw(9.79)
+        Klh['HDTA'][3] = pw(2.70)
+        Klh['HDTA'][4] = pw(2.20)
+        Stab['HDTA']['Ca'] = pw(4.6)
+        Kmlh['HDTA']['Ca'] = pw(3.7+10.81-4.6)
+        Stab['HDTA']['Mg'] = pw(4.80)
+        Kmlh['HDTA']['Mg'] = pw(3.66+10.81-4.8)
+        Stab['HDTA']['K']  = 0.0
+        Stab['HDTA']['Na'] = 0.0
+
+        Klh['EGTA'][1] = pw(9.47)*ta(-5800,T)
+        Klh['EGTA'][2] = pw(8.85)*ta(-5800,T)
+        Klh['EGTA'][3] = pw(2.66)*ta(1400,T)
+        Klh['EGTA'][4] = pw(2.00)*ta(300,T)
+        Stab['EGTA']['Ca'] = pw(10.97)*ta(-8100,T)
+        Kmlh['EGTA']['Ca'] = pw(3.79)*ta(-400,T)
+        Stab['EGTA']['Mg'] = pw(5.21)*ta(5000,T)
+        Kmlh['EGTA']['Mg'] = pw(7.62)*ta(2000,T)
+        Stab['EGTA']['K']  = 0.0
+        Stab['EGTA']['Na'] = 0.0
+
+        Klh['BAPTA'][1] = pw(6.36)*ta(-2900,T)
+        Klh['BAPTA'][2] = pw(5.47)*ta(-2900,T)
+        Stab['BAPTA']['Ca'] = pw(6.97)*ta(2600,T)
+        Stab['BAPTA']['Mg'] = pw(1.77)*ta(11000,T)
+        Stab['BAPTA']['K']  = 0.0
+        Stab['BAPTA']['Na'] = 0.0
+
+        Klh['HPO4'][1] = pw(6.57)*ta(-800,T)
+        Klh['HPO4'][2] = pw(1.72)*ta(1900,T)
+        Stab['HPO4']['Ca'] = pw(1.86)*ta(3000,T)
+        Kmlh['HPO4']['Ca'] = pw(0.96+6.57-1.86)*ta(3000-800-3000,T)
+        Stab['HPO4']['Mg'] = pw(2.03)*ta(3000,T)
+        Kmlh['HPO4']['Mg'] = pw(0.77+6.57-2.03)*ta(3000-800-3000,T)
+        Stab['HPO4']['Na'] = pw(0.75)*ta(8000,T)
+        Stab['HPO4']['K']  = pw(0.64)*ta(6000,T)
+
+        for ln in LIGANDS:
+            v = VL[ln]
+            for i in range(1, v+1):
+                Klh[ln][i] *= iea(v+1-i, 1, dlogf)
+            for m in METALS:
+                vm = VALENCE[m]
+                if Stab[ln][m] > 0:
+                    Stab[ln][m] *= iea(v, vm, dlogf)
+                if Kmlh[ln].get(m, 0) > 0:
+                    Kmlh[ln][m] *= iea(v-vm, 1, dlogf)
+
+        for ln in LIGANDS:
+            v = VL[ln]
+            LH[ln][0] = 1.0
+            s = 1.0
+            for i in range(1, v+1):
+                LH[ln][i] = H * Klh[ln][i] * LH[ln][i-1]
+                s += LH[ln][i]
+            for i in range(v+1):
+                LH[ln][i] /= s
+            FLH[ln] = LH[ln][1]
+            for i in range(2, v+1):
+                FLH[ln] += i * LH[ln][i]
+            for m in METALS:
+                MLH[ln][m][0] = Stab[ln][m] * LH[ln][0]
+                MLH[ln][m][1] = MLH[ln][m][0] * Kmlh[ln].get(m, 0) * H
+                App[ln][m]    = MLH[ln][m][0] + MLH[ln][m][1]
+
+    def adjust_adp():
+        s = 1.0
+        for m in METALS:
+            s += App['ADP'][m] * Free[m]
+        a = App['ADP']['Mg']
+        if MgADP > 0 and Free['Mg'] > 0 and a > 0:
+            FL['ADP'] = MgADP / (Free['Mg'] * a)
+        TL['ADP'] = FL['ADP'] * s
+        Add['Na2ADPH'] = 0.0
+        Add['NaADPH2'] = TL['ADP']
+
+    def rest_na():
+        return (Add['NaADPH2'] + Add['NaCl'] + Add['NaAzide']
+                + 2.0*(Add['Na2CrP'] + Add['Na2ADPH']))
+
+    def compute_pep_k_atp_na_adp():
+        tK  = Add['KOH'] + Add['KHPO4H'] + Add['KCl']
+        kk  = 1.0
+        for ln in ('ATP', 'ADP', 'HPO4'):
+            if FL[ln] > 0:
+                kk += App[ln]['K'] * FL[ln]
+        if TL['PEP'] > 0:
+            sCaMg = 1.0 + Free['Ca']*App['PEP']['Ca'] + Free['Mg']*App['PEP']['Mg']
+            kk2   = kk * sCaMg / max(App['PEP']['K'], 1e-30)
+            x     = kk2 + tK
+            FL['PEP']  = 0.5*(math.sqrt(x*x + 4*kk2*TL['PEP']) - x) / sCaMg
+            Free['K']  = (TL['PEP']/max(FL['PEP'],1e-30) - sCaMg) / max(App['PEP']['K'],1e-30)
+            Total['K'] = tK + TL['PEP']
+        else:
+            FL['PEP']  = 0.0
+            Free['K']  = tK / kk if kk > 0 else 0.0
+            Total['K'] = tK
+
+        adjust_adp()
+
+        tNa = 1.0
+        for ln in ('ADP', 'PEP', 'HPO4'):
+            if FL[ln] > 0:
+                tNa += FL[ln] * App[ln]['Na']
+
+        if MgATP > 0:
+            a = App['ATP']['Mg']
+            if a > 0:
+                FL['ATP'] = MgATP / (Free['Mg'] * a)
+            MATP  = 1.0 + sum(Free[m]*App['ATP'][m] for m in ('Ca','Mg','K'))
+            rNa   = rest_na()
+            denom = tNa - FL['ATP']*App['ATP']['Na']
+            Free['Na']  = (rNa + 2*FL['ATP']*MATP) / denom if abs(denom) > 1e-30 else rNa
+            MATP += Free['Na'] * App['ATP']['Na']
+            TL['ATP']         = FL['ATP'] * MATP
+            Add['Na2ATPH2']   = TL['ATP']
+            Total['Na']       = rNa + 2*Add['Na2ATPH2']
+        else:
+            rNa        = rest_na()
+            Free['Na'] = rNa / tNa if tNa > 0 else 0.0
+            Total['Na'] = rNa
+
+    def compute_total_ca_mg():
+        tCa = 1.0
+        tMg = 1.0
+        for ln in LIGANDS:
+            if FL[ln] > 0:
+                tCa += App[ln]['Ca'] * FL[ln]
+                tMg += App[ln]['Mg'] * FL[ln]
+        Total['Ca'] = Free['Ca'] * tCa
+        Total['Mg'] = Free['Mg'] * tMg
+
+        le = TL['EGTA']
+        if no_ca_egta:
+            Add['CaCl2']    = Total['Ca']
+            Add['CaEGTAH2'] = 0.0
+            Add['EGTAH4']   = TL['EGTA']
+        elif le > 0:
+            if Total['Ca'] < le:
+                Add['CaEGTAH2'] = Total['Ca']
+                Add['EGTAH4']   = le - Total['Ca']
+                Add['CaCl2']    = 0.0
+            else:
+                Add['CaEGTAH2'] = le
+                Add['CaCl2']    = Total['Ca'] - le
+                Add['EGTAH4']   = 0.0
+        else:
+            Add['CaCl2'] = Total['Ca']
+        Add['MgCl2'] = Total['Mg']
+
+    def compute_all():
+        if TL['HPO4'] > 0:
+            soM = 1.0 + sum(Free[m]*App['HPO4'][m] for m in METALS)
+            FL['HPO4'] = TL['HPO4'] / max(soM, 1e-30)
+            for _ in range(60):
+                last = FL['HPO4']
+                compute_pep_k_atp_na_adp()
+                soM = 1.0 + sum(Free[m]*App['HPO4'][m] for m in METALS)
+                FL['HPO4'] = TL['HPO4'] / max(soM, 1e-30)
+                if abs(FL['HPO4'] - last) < 1e-10:
+                    break
+        else:
+            compute_pep_k_atp_na_adp()
+        compute_total_ca_mg()
+
+    def adjust_H():
+        added_H = buf_Hc
+        for stof in ADJUST_H_ADDS:
+            added_H += Add.get(stof, 0.0) * H_IN.get(stof, 0)
+        bound_H = 0.0
+        for ln in LIGANDS:
+            if FL[ln] > 0:
+                lh = FLH[ln]
+                for m in METALS:
+                    lh += MLH[ln][m][1] * Free[m]
+                bound_H += lh * FL[ln]
+        corr = added_H - bound_H - H
+        err  = abs(corr) / H if H > 0 else 0.0
+        if abs(corr) > 1e-30:
+            koh = Add['KOH']
+            hcl = Add['HCl']
+            if koh == 0.0:
+                if corr < hcl:
+                    Add['HCl'] -= corr
+                else:
+                    corr += hcl
+                    Add['HCl'] = 0.0
+                    bH = _bound_H_per_KOH()
+                    Add['KOH'] = corr / bH if abs(bH) > 1e-30 else 0.0
+                    compute_all()
+            else:
+                bH = _bound_H_per_KOH()
+                if corr > -koh * bH:
+                    Add['KOH'] += corr / bH if abs(bH) > 1e-30 else 0.0
+                else:
+                    corr += koh * bH
+                    Add['KOH'] = 0.0
+                    Add['HCl'] = -corr
+                compute_all()
+        return err
+
+    def _bound_H_per_KOH():
+        bH = 1.0
+        for ln in ('ATP', 'ADP'):
+            if FL[ln] > 0:
+                bH += FL[ln] * (MLH[ln]['K'][1] - 2*App[ln]['K'])
+        return bH
+
+    fill_constants()
+    update_buffer()
+
+    for ln in ('EGTA', 'BAPTA', 'CrP', 'PEP'):
+        if TL[ln] > 0:
+            s = 1.0 + sum(App[ln][m]*Free[m] for m in ('Ca','Mg'))
+            FL[ln] = TL[ln] / max(s, 1e-30)
+
+    if MgATP > 0 and Free['Mg'] > 0 and App['ATP']['Mg'] > 0:
+        FL['ATP'] = MgATP / (Free['Mg'] * App['ATP']['Mg'])
+    if MgADP > 0 and Free['Mg'] > 0 and App['ADP']['Mg'] > 0:
+        FL['ADP'] = MgADP / (Free['Mg'] * App['ADP']['Mg'])
+
+    sCaMg_hdta = 1.0 + sum(App['HDTA'][m]*Free[m] for m in ('Ca','Mg'))
+
+    if not use_hdta:
+        TL['HDTA'] = 0.0
+        FL['HDTA'] = 0.0
+        Add['KCl'] = 0.0
+
+    p_new = ion_EQ
+    for _outer in range(60):
+        fill_constants()
+        update_buffer()
+        if MgATP > 0 and Free['Mg'] > 0 and App['ATP']['Mg'] > 0:
+            FL['ATP'] = MgATP / (Free['Mg'] * App['ATP']['Mg'])
+        if MgADP > 0 and Free['Mg'] > 0 and App['ADP']['Mg'] > 0:
+            FL['ADP'] = MgADP / (Free['Mg'] * App['ADP']['Mg'])
+        for ln in ('EGTA', 'BAPTA', 'CrP', 'PEP'):
+            if TL[ln] > 0:
+                s = 1.0 + sum(App[ln][m]*Free[m] for m in ('Ca','Mg'))
+                FL[ln] = TL[ln] / max(s, 1e-30)
+        compute_all()
+        for _ in range(40):
+            if adjust_H() < 0.1:
+                break
+        p_new = H + Free['Na'] + Free['K'] + (Free['Ca']+Free['Mg'])*2
+        if buffer == 'Imidazol':
+            p_new += buf_IS
+        if use_hdta:
+            TL['HDTA'] = max(0.0, TL['HDTA'] + (ion_EQ - p_new)/2)
+            Add['HDTAH4'] = TL['HDTA']
+            sCaMg_hdta   = 1.0 + sum(App['HDTA'][m]*Free[m] for m in ('Ca','Mg'))
+            FL['HDTA']   = TL['HDTA'] / max(sCaMg_hdta, 1e-30)
+        else:
+            Add['KCl'] = max(0.0, Add['KCl'] + ion_EQ - p_new)
+        if abs(p_new - ion_EQ) < 1e-4 * ion_EQ:
+            break
+
+    total_cl = (Add['NaCl'] + 2*(Add['CaCl2']+Add['MgCl2'])
+                + Add['HCl'] + Add['KCl'])
+    n_ion_eq = 1e-14/H + Add['NaAzide'] + total_cl
+    if buffer != 'Imidazol':
+        n_ion_eq += buf_IS
+
+    ion_str = p_new + (Free['Ca']+Free['Mg'])*2 + n_ion_eq
+
+    for ln in LIGANDS:
+        if FL[ln] > 0:
+            v = VL[ln]
+            IS = IS2 = 0.0
+            for m in METALS:
+                vm = VALENCE[m]
+                c0 = (v - vm)
+                c1 = max(v - vm - 1, 0)
+                IS  += Free[m] * (c0*MLH[ln][m][0] + c1*MLH[ln][m][1])
+                IS2 += Free[m] * (c0**2*MLH[ln][m][0] + c1**2*MLH[ln][m][1])
+            for i in range(1, v+1):
+                IS  += i * LH[ln][v-i]
+                IS2 += i*i * LH[ln][v-i]
+            n_ion_eq += IS  * FL[ln]
+            ion_str  += IS2 * FL[ln]
+
+    ion_str /= 2.0
+
+    NICE = {
+        'Na2ATPH2':'Na\u2082ATPH\u2082', 'MgCl2':'MgCl\u2082',   'Na2ADPH':'Na\u2082ADPH',
+        'NaADPH2':'NaADPH\u2082',   'HDTAH4':'HDTAH\u2084',  'EGTAH4':'EGTAH\u2084',
+        'CaEGTAH2':'CaEGTAH\u2082', 'BAPTAH4':'BAPTAH\u2084','Na2CrP':'Na\u2082PCr',
+        'KPEPH2':'KPEPH\u2082',      'KHPO4H':'KHPO\u2084H',  'CaCl2':'CaCl\u2082',
+        'NaCl':'NaCl',          'KCl':'KCl',         'HCl':'HCl',
+        'KOH':'KOH',            'NaAzide':'NaN\u2083',
+        'BES':'BES','HEPES':'HEPES','MES':'MES','TES':'TES','Imidazol':'Imidazole',
+    }
+
+    adds_out = {}
+    for k, v in sorted(Add.items()):
+        if abs(v) > 1e-9 or k == 'KCl':
+            adds_out[NICE.get(k, k)] = round(v*1000, 4)
+
+    return {
+        'temperature'   : T,
+        'pH'            : pH,
+        'pCa'           : pCa,
+        'ion_EQ_mM'     : round(ion_EQ*1000, 3),
+        'ion_str_mM'    : round(ion_str*1000, 3),
+        'free_Ca_uM'    : round(Free['Ca']*1e6,  5),
+        'free_Mg_mM'    : round(Free['Mg']*1000, 4),
+        'free_K_mM'     : round(Free['K'] *1000, 4),
+        'free_Na_mM'    : round(Free['Na']*1000, 4),
+        'total_Ca_mM'   : round(Total['Ca']*1000, 4),
+        'total_Mg_mM'   : round(Total['Mg']*1000, 4),
+        'total_K_mM'    : round(Total['K'] *1000, 4),
+        'total_Na_mM'   : round(Total['Na']*1000, 4),
+        'MgATP_mM'      : round(MgATP*1000, 4),
+        'MgADP_mM'      : round(MgADP*1000, 4),
+        'TotalCl_mM'    : round(total_cl*1000, 4),
+        'additions'     : adds_out,
+    }
+`;
+
+// ══════════════════════════════════════════════════════════════════════════
+//  Pyodide boot
+// ══════════════════════════════════════════════════════════════════════════
+let pyodideReady = false;
+let pyodide = null;
+
+async function initPyodide() {
+  const status = document.getElementById('pyodide-status');
+  const btn    = document.getElementById('calc');
+  try {
+    status.textContent = 'Loading Pyodide runtime…';
+    pyodide = await loadPyodide();
+    status.textContent = 'Initialising calculator…';
+    await pyodide.runPythonAsync(PYTHON_CODE);
+    pyodideReady = true;
+    btn.disabled = false;
+    btn.textContent = 'Calculate Solution';
+    status.textContent = 'Ready.';
+    setTimeout(() => { status.textContent = ''; }, 2000);
+  } catch(e) {
+    status.textContent = 'Failed to load Pyodide: ' + e.message;
+    console.error(e);
+  }
+}
+
+initPyodide();
+
+// ══════════════════════════════════════════════════════════════════════════
+//  Calculate
+// ══════════════════════════════════════════════════════════════════════════
+async function calculate() {
+  if (!pyodideReady) return;
+  const btn    = document.getElementById('calc');
+  const errbox = document.getElementById('errbox');
+  btn.disabled = true;
+  btn.textContent = 'Calculating…';
+  errbox.style.display = 'none';
+
+  const p = {
+    temperature: +document.getElementById('temperature').value,
+    pH:          +document.getElementById('pH').value,
+    pCa:         +document.getElementById('pCa').value,
+    free_Mg:     +document.getElementById('free_Mg').value   / 1000,
+    ion_EQ:      +document.getElementById('ion_EQ').value    / 1000,
+    MgATP:       +document.getElementById('MgATP').value     / 1000,
+    MgADP:       +document.getElementById('MgADP').value     / 1000,
+    EGTA:        +document.getElementById('EGTA').value      / 1000,
+    BAPTA:       +document.getElementById('BAPTA').value     / 1000,
+    HDTA:        +document.getElementById('HDTA').value      / 1000,
+    CrP:         +document.getElementById('CrP').value       / 1000,
+    PEP:         +document.getElementById('PEP').value       / 1000,
+    HPO4:        +document.getElementById('HPO4').value      / 1000,
+    buf_conc:    +document.getElementById('buf_conc').value  / 1000,
+    NaCl:        +document.getElementById('NaCl').value      / 1000,
+    NaAzide:     +document.getElementById('NaAzide').value   / 1000,
+    buffer:       document.getElementById('buffer').value,
+    no_ca_egta:   document.getElementById('no_ca_egta').checked,
+    use_hdta:     document.getElementById('use_hdta').checked,
+  };
+
+  try {
+    // Pass dict to Python via json, run compute(), get result back as JSON
+    pyodide.globals.set('_params_json', JSON.stringify(p));
+    const resultJson = await pyodide.runPythonAsync(`
+import json as _json
+_result = compute(_json.loads(_params_json))
+_json.dumps(_result)
+`);
+    const data = JSON.parse(resultJson);
+    showResults(data);
+  } catch(e) {
+    errbox.textContent = 'Error: ' + e.message;
+    errbox.style.display = 'block';
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Calculate Solution';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  Display results
+// ══════════════════════════════════════════════════════════════════════════
+function mM(v, d=3)  { return v.toFixed(d) + ' <span class="unit">mM</span>'; }
+function uM(v, d=4)  { return v.toFixed(d) + ' <span class="unit">µM</span>'; }
+
+function showResults(r) {
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('r_freeCa').innerHTML = uM(r.free_Ca_uM);
+  document.getElementById('r_freeMg').innerHTML = mM(r.free_Mg_mM);
+  document.getElementById('r_freeK') .innerHTML = mM(r.free_K_mM);
+  document.getElementById('r_freeNa').innerHTML = mM(r.free_Na_mM);
+  document.getElementById('r_totCa') .innerHTML = mM(r.total_Ca_mM);
+  document.getElementById('r_totMg') .innerHTML = mM(r.total_Mg_mM);
+  document.getElementById('r_totK')  .innerHTML = mM(r.total_K_mM);
+  document.getElementById('r_totNa') .innerHTML = mM(r.total_Na_mM);
+  document.getElementById('r_totCl') .innerHTML = mM(r.TotalCl_mM);
+  document.getElementById('r_ionEQ') .innerHTML = mM(r.ion_EQ_mM);
+  document.getElementById('r_ionStr').innerHTML = mM(r.ion_str_mM);
+  document.getElementById('r_mgatp') .innerHTML = mM(r.MgATP_mM);
+  document.getElementById('r_mgadp') .innerHTML = mM(r.MgADP_mM);
+
+  const grid = document.getElementById('additions-grid');
+  grid.innerHTML = '';
+  for (const [name, val] of Object.entries(r.additions)) {
+    grid.innerHTML +=
+      `<div class="add-item"><span class="lbl">${name}</span>` +
+      `<span class="val">${val.toFixed(3)} <span class="unit">mM</span></span></div>`;
+  }
+}
+</script>
+</body>
+</html>
