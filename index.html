@@ -68,6 +68,11 @@
   .add-item .lbl { color: #444; }
   .add-item .val { font-weight: 600; }
 
+.hint { font-size: .78rem; color: var(--muted); line-height: 1.45;
+          margin: -2px 0 9px; }
+  .note { background: #f0f6ff; border: 1px solid #cfe0f5; border-radius: 5px;
+          padding: 8px 11px; font-size: 12.5px; color: #24466e;
+          line-height: 1.5; margin-top: 10px; }
   hr.sep { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
   #errbox { background: #fdf0f0; border: 1px solid #e8b0b0; color: #8b0000;
             border-radius: 5px; padding: 8px 12px; margin-top: 8px;
@@ -78,7 +83,7 @@
 
 <header>
   <h1>Fabiato Calcium Solution Calculator</h1>
-  <p>FabForWin algorithm · Fabiato &amp; Fabiato 1979 · Fabiato 1981, 1985 · Adapted by Ger Stienen, PhD &amp; Vasco Sequeira, PhD</p>
+  <p>FabForWin algorithm · Fabiato &amp; Fabiato 1979 · Fabiato 1981, 1985 · Adapted by Ger Stienen, PhD &amp; Vasco Sequeira, PhD · salt-form selection added</p>
 </header>
 
 <main>
@@ -128,6 +133,73 @@
   </div>
 
   <div class="section">
+    <h2>Salt forms used</h2>
+    <p class="hint">Pick the compound you actually weigh out. Counter-ions and
+       protons are carried through the calculation, so MgCl&#8322;, KOH and the
+       Na/K totals adjust automatically.</p>
+    <label><span>ATP salt</span>
+      <select id="sf_ATP">
+        <option value="Na2ATPH2" selected>Na&#8322;ATP</option>
+        <option value="MgATPH2">MgATP</option>
+        <option value="K2ATPH2">K&#8322;ATP</option>
+      </select>
+    </label>
+    <label><span>ADP salt</span>
+      <select id="sf_ADP">
+        <option value="NaADPH2" selected>NaADP</option>
+        <option value="Na2ADPH">Na&#8322;ADP</option>
+        <option value="MgADPH">MgADP</option>
+        <option value="K2ADPH">K&#8322;ADP</option>
+      </select>
+    </label>
+    <label><span>EGTA salt</span>
+      <select id="sf_EGTA">
+        <option value="EGTAH4" selected>EGTA free acid</option>
+        <option value="K2EGTAH2">K&#8322;EGTA</option>
+        <option value="Na2EGTAH2">Na&#8322;EGTA</option>
+      </select>
+    </label>
+    <label><span>BAPTA salt</span>
+      <select id="sf_BAPTA">
+        <option value="BAPTAH4" selected>BAPTA free acid</option>
+        <option value="K2BAPTAH2">K&#8322;BAPTA</option>
+      </select>
+    </label>
+    <label><span>PCr salt</span>
+      <select id="sf_CrP">
+        <option value="Na2CrP" selected>Na&#8322;PCr</option>
+        <option value="K2CrP">K&#8322;PCr</option>
+      </select>
+    </label>
+    <label><span>PEP salt</span>
+      <select id="sf_PEP">
+        <option value="KPEPH2" selected>K-PEP</option>
+        <option value="NaPEPH2">Na-PEP</option>
+      </select>
+    </label>
+    <label><span>Phosphate salt</span>
+      <select id="sf_HPO4">
+        <option value="KHPO4H" selected>KH&#8322;PO&#8324;</option>
+        <option value="K2HPO4">K&#8322;HPO&#8324;</option>
+        <option value="NaHPO4H">NaH&#8322;PO&#8324;</option>
+        <option value="Na2HPO4">Na&#8322;HPO&#8324;</option>
+      </select>
+    </label>
+    <label><span>HDTA salt</span>
+      <select id="sf_HDTA">
+        <option value="HDTAH4" selected>HDTA free acid</option>
+        <option value="K4HDTA">K&#8324;HDTA</option>
+      </select>
+    </label>
+    <label><span>Titrant</span>
+      <select id="sf_titrant">
+        <option value="KOH" selected>KOH</option>
+        <option value="NaOH">NaOH</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="section">
     <h2>Options</h2>
     <div class="checkbox-row">
       <input type="checkbox" id="no_ca_egta">
@@ -171,7 +243,10 @@
     <div class="result-row"><span class="lbl">Ionic strength</span> <span class="val" id="r_ionStr"></span></div>
     <div class="result-row"><span class="lbl">Mg·ATP</span>         <span class="val" id="r_mgatp"></span></div>
     <div class="result-row"><span class="lbl">Mg·ADP</span>         <span class="val" id="r_mgadp"></span></div>
+    <div class="result-row"><span class="lbl">Mg from nucleotide salt</span> <span class="val" id="r_mgsalt"></span></div>
   </div>
+
+  <div id="mgnote" class="note" style="display:none"></div>
 
   <hr class="sep">
   <h2>Additions required (mM)</h2>
@@ -203,13 +278,45 @@ H_IN = {
     'CaCl2':    0, 'NaCl': 0,    'KCl': 0,  'HCl': 1,  'KOH': -1,
     'NaAzide':  0, 'Imidazol': -1,
     'MES': 1, 'BES': 1, 'TES': 1, 'HEPES': 1,
+    # ---- alternative salt forms (Option B) ----
+    # ATP4- needs 4 counter-charges; H_IN = protons supplied per mole
+    'MgATPH2':  2, 'K2ATPH2':  2, 'Na2ATPH2_alt': 2,
+    'MgADPH':   1, 'K2ADPH':   1,
+    'K2EGTAH2': 2, 'Na2EGTAH2':2,
+    'K2CrP':    0,
+    'NaPEPH2':  2,
+    'Na2HPO4':  0, 'K2HPO4':   0, 'NaHPO4H': 1,
+    'K2BAPTAH2':2,
+    'K4HDTA':   0,
+    'NaOH':    -1,
 }
 
 ADJUST_H_ADDS = (
     'Na2ATPH2', 'MgCl2', 'Na2ADPH', 'NaADPH2', 'HDTAH4',
     'EGTAH4', 'CaEGTAH2', 'BAPTAH4', 'Na2CrP', 'KPEPH2', 'KHPO4H',
     'CaCl2', 'NaCl', 'KCl', 'HCl', 'KOH',
+    'MgATPH2', 'K2ATPH2', 'MgADPH', 'K2ADPH',
+    'K2EGTAH2', 'Na2EGTAH2', 'K2CrP', 'NaPEPH2',
+    'Na2HPO4', 'K2HPO4', 'NaHPO4H', 'K2BAPTAH2', 'K4HDTA', 'NaOH',
 )
+
+# Counter-ion stoichiometry: moles of Na / K / Mg / Ca supplied per mole salt
+COUNTER = {
+    'Na2ATPH2': {'Na':2}, 'MgATPH2': {'Mg':1}, 'K2ATPH2': {'K':2},
+    'NaADPH2':  {'Na':1}, 'Na2ADPH': {'Na':2},
+    'MgADPH':   {'Mg':1}, 'K2ADPH':  {'K':2},
+    'EGTAH4':   {},       'CaEGTAH2':{'Ca':1},
+    'K2EGTAH2': {'K':2},  'Na2EGTAH2':{'Na':2},
+    'Na2CrP':   {'Na':2}, 'K2CrP':   {'K':2},
+    'KPEPH2':   {'K':1},  'NaPEPH2': {'Na':1},
+    'KHPO4H':   {'K':1},  'NaHPO4H': {'Na':1},
+    'Na2HPO4':  {'Na':2}, 'K2HPO4':  {'K':2},
+    'BAPTAH4':  {},       'K2BAPTAH2':{'K':2},
+    'HDTAH4':   {},       'K4HDTA':  {'K':4},
+    'NaCl': {'Na':1}, 'NaAzide': {'Na':1}, 'KCl': {'K':1},
+    'KOH': {'K':1},   'NaOH': {'Na':1},
+    'CaCl2': {'Ca':1}, 'MgCl2': {'Mg':1},
+}
 
 VL = {'ATP': 4, 'ADP': 3, 'HDTA': 4, 'EGTA': 4,
       'BAPTA': 4, 'CrP': 2, 'HPO4': 2, 'PEP': 3}
@@ -239,6 +346,24 @@ def compute(p):
         'ADP':   0.0,
     }
 
+    # ---- salt forms (Option B) ----
+    sf = p.get('salt_forms', {}) or {}
+    SF = {
+        'ATP':   str(sf.get('ATP',   'Na2ATPH2')),
+        'ADP':   str(sf.get('ADP',   'NaADPH2')),
+        'EGTA':  str(sf.get('EGTA',  'EGTAH4')),
+        'BAPTA': str(sf.get('BAPTA', 'BAPTAH4')),
+        'CrP':   str(sf.get('CrP',   'Na2CrP')),
+        'PEP':   str(sf.get('PEP',   'KPEPH2')),
+        'HPO4':  str(sf.get('HPO4',  'KHPO4H')),
+        'HDTA':  str(sf.get('HDTA',  'HDTAH4')),
+        'titrant': str(sf.get('titrant', 'KOH')),
+    }
+    # Mg supplied by Mg salts of ATP/ADP is credited against MgCl2
+    def mg_from_salts():
+        return (Add.get('MgATPH2', 0.0)*COUNTER['MgATPH2'].get('Mg', 0)
+                + Add.get('MgADPH', 0.0)*COUNTER['MgADPH'].get('Mg', 0))
+
     no_ca_egta = bool(p.get('no_ca_egta', False))
     use_hdta   = bool(p.get('use_hdta',   False))
     buffer     = str(p.get('buffer', 'BES'))
@@ -253,12 +378,12 @@ def compute(p):
     Add['NaCl']    = nacl
     Add['NaAzide'] = naazide
     Add[buffer]    = buf_conc
-    Add['Na2CrP']  = TL['CrP']
-    Add['KPEPH2']  = TL['PEP']
-    Add['KHPO4H']  = TL['HPO4']
-    Add['BAPTAH4'] = TL['BAPTA']
+    Add[SF['CrP']]   = TL['CrP']
+    Add[SF['PEP']]   = TL['PEP']
+    Add[SF['HPO4']]  = TL['HPO4']
+    Add[SF['BAPTA']] = TL['BAPTA']
     if use_hdta:
-        Add['HDTAH4'] = TL['HDTA']
+        Add[SF['HDTA']] = TL['HDTA']
 
     Klh  = {n: [0.0]*6 for n in LIGANDS}
     LH   = {n: [0.0]*6 for n in LIGANDS}
@@ -413,15 +538,33 @@ def compute(p):
         if MgADP > 0 and Free['Mg'] > 0 and a > 0:
             FL['ADP'] = MgADP / (Free['Mg'] * a)
         TL['ADP'] = FL['ADP'] * s
-        Add['Na2ADPH'] = 0.0
-        Add['NaADPH2'] = TL['ADP']
+        for _k in ('Na2ADPH', 'NaADPH2', 'MgADPH', 'K2ADPH'):
+            Add[_k] = 0.0
+        Add[SF['ADP']] = TL['ADP']
 
     def rest_na():
-        return (Add['NaADPH2'] + Add['NaCl'] + Add['NaAzide']
-                + 2.0*(Add['Na2CrP'] + Add['Na2ADPH']))
+        # Na supplied by every salt except the ATP salt (solved separately)
+        # and except the PEP salt (handled in the PEP block).
+        tot = 0.0
+        for k, st in COUNTER.items():
+            if k == SF['ATP'] or k == SF['PEP']:
+                continue
+            n = st.get('Na', 0)
+            if n:
+                tot += Add.get(k, 0.0) * n
+        return tot
 
     def compute_pep_k_atp_na_adp():
-        tK  = Add['KOH'] + Add['KHPO4H'] + Add['KCl']
+        # K supplied by salts that are NOT solved elsewhere.
+        # The PEP salt is excluded: its K is solved in the PEP block below,
+        # exactly as in the original (tK = KOH + KHPO4H + KCl).
+        tK = 0.0
+        for k, st in COUNTER.items():
+            if k == SF['PEP']:
+                continue
+            nk = st.get('K', 0)
+            if nk:
+                tK += Add.get(k, 0.0) * nk
         kk  = 1.0
         for ln in ('ATP', 'ADP', 'HPO4'):
             if FL[ln] > 0:
@@ -451,12 +594,27 @@ def compute(p):
                 FL['ATP'] = MgATP / (Free['Mg'] * a)
             MATP  = 1.0 + sum(Free[m]*App['ATP'][m] for m in ('Ca','Mg','K'))
             rNa   = rest_na()
-            denom = tNa - FL['ATP']*App['ATP']['Na']
-            Free['Na']  = (rNa + 2*FL['ATP']*MATP) / denom if abs(denom) > 1e-30 else rNa
-            MATP += Free['Na'] * App['ATP']['Na']
-            TL['ATP']         = FL['ATP'] * MATP
-            Add['Na2ATPH2']   = TL['ATP']
-            Total['Na']       = rNa + 2*Add['Na2ATPH2']
+            nNa   = COUNTER.get(SF['ATP'], {}).get('Na', 0)
+            if nNa:
+                # ATP enters as its Na salt: Na from ATP is part of the unknown
+                denom = tNa - FL['ATP']*App['ATP']['Na']
+                Free['Na'] = ((rNa + nNa*FL['ATP']*MATP) / denom
+                              if abs(denom) > 1e-30 else rNa)
+                MATP += Free['Na'] * App['ATP']['Na']
+                TL['ATP'] = FL['ATP'] * MATP
+                for _k in ('Na2ATPH2', 'MgATPH2', 'K2ATPH2'):
+                    Add[_k] = 0.0
+                Add[SF['ATP']] = TL['ATP']
+                Total['Na'] = rNa + nNa*Add[SF['ATP']]
+            else:
+                # ATP enters as Mg or K salt: no Na from ATP, Na is fully known
+                Free['Na'] = rNa / tNa if tNa > 0 else 0.0
+                MATP += Free['Na'] * App['ATP']['Na']
+                TL['ATP'] = FL['ATP'] * MATP
+                for _k in ('Na2ATPH2', 'MgATPH2', 'K2ATPH2'):
+                    Add[_k] = 0.0
+                Add[SF['ATP']] = TL['ATP']
+                Total['Na'] = rNa
         else:
             rNa        = rest_na()
             Free['Na'] = rNa / tNa if tNa > 0 else 0.0
@@ -472,23 +630,25 @@ def compute(p):
         Total['Ca'] = Free['Ca'] * tCa
         Total['Mg'] = Free['Mg'] * tMg
 
-        le = TL['EGTA']
+        le  = TL['EGTA']
+        egs = SF['EGTA']                      # EGTAH4 / K2EGTAH2 / Na2EGTAH2
+        for _k in ('EGTAH4', 'K2EGTAH2', 'Na2EGTAH2', 'CaEGTAH2'):
+            Add[_k] = 0.0
         if no_ca_egta:
-            Add['CaCl2']    = Total['Ca']
-            Add['CaEGTAH2'] = 0.0
-            Add['EGTAH4']   = TL['EGTA']
+            Add['CaCl2'] = Total['Ca']
+            Add[egs]     = TL['EGTA']
         elif le > 0:
             if Total['Ca'] < le:
                 Add['CaEGTAH2'] = Total['Ca']
-                Add['EGTAH4']   = le - Total['Ca']
+                Add[egs]        = le - Total['Ca']
                 Add['CaCl2']    = 0.0
             else:
                 Add['CaEGTAH2'] = le
                 Add['CaCl2']    = Total['Ca'] - le
-                Add['EGTAH4']   = 0.0
         else:
             Add['CaCl2'] = Total['Ca']
-        Add['MgCl2'] = Total['Mg']
+        # Mg already supplied as MgATP / MgADP is subtracted from MgCl2
+        Add['MgCl2'] = max(0.0, Total['Mg'] - mg_from_salts())
 
     def compute_all():
         if TL['HPO4'] > 0:
@@ -519,7 +679,8 @@ def compute(p):
         corr = added_H - bound_H - H
         err  = abs(corr) / H if H > 0 else 0.0
         if abs(corr) > 1e-30:
-            koh = Add['KOH']
+            TIT = SF['titrant']              # 'KOH' or 'NaOH'
+            koh = Add[TIT]
             hcl = Add['HCl']
             if koh == 0.0:
                 if corr < hcl:
@@ -528,24 +689,25 @@ def compute(p):
                     corr += hcl
                     Add['HCl'] = 0.0
                     bH = _bound_H_per_KOH()
-                    Add['KOH'] = corr / bH if abs(bH) > 1e-30 else 0.0
+                    Add[TIT] = corr / bH if abs(bH) > 1e-30 else 0.0
                     compute_all()
             else:
                 bH = _bound_H_per_KOH()
                 if corr > -koh * bH:
-                    Add['KOH'] += corr / bH if abs(bH) > 1e-30 else 0.0
+                    Add[TIT] += corr / bH if abs(bH) > 1e-30 else 0.0
                 else:
                     corr += koh * bH
-                    Add['KOH'] = 0.0
+                    Add[TIT] = 0.0
                     Add['HCl'] = -corr
                 compute_all()
         return err
 
     def _bound_H_per_KOH():
+        met = 'Na' if SF['titrant'] == 'NaOH' else 'K'
         bH = 1.0
         for ln in ('ATP', 'ADP'):
             if FL[ln] > 0:
-                bH += FL[ln] * (MLH[ln]['K'][1] - 2*App[ln]['K'])
+                bH += FL[ln] * (MLH[ln][met][1] - 2*App[ln][met])
         return bH
 
     fill_constants()
@@ -624,13 +786,20 @@ def compute(p):
     ion_str /= 2.0
 
     NICE = {
-        'Na2ATPH2':'Na\u2082ATPH\u2082', 'MgCl2':'MgCl\u2082',   'Na2ADPH':'Na\u2082ADPH',
-        'NaADPH2':'NaADPH\u2082',   'HDTAH4':'HDTAH\u2084',  'EGTAH4':'EGTAH\u2084',
-        'CaEGTAH2':'CaEGTAH\u2082', 'BAPTAH4':'BAPTAH\u2084','Na2CrP':'Na\u2082PCr',
-        'KPEPH2':'KPEPH\u2082',      'KHPO4H':'KHPO\u2084H',  'CaCl2':'CaCl\u2082',
+        'Na2ATPH2':'Na\\u2082ATPH\\u2082', 'MgCl2':'MgCl\\u2082',   'Na2ADPH':'Na\\u2082ADPH',
+        'NaADPH2':'NaADPH\\u2082',   'HDTAH4':'HDTAH\\u2084',  'EGTAH4':'EGTAH\\u2084',
+        'CaEGTAH2':'CaEGTAH\\u2082', 'BAPTAH4':'BAPTAH\\u2084','Na2CrP':'Na\\u2082PCr',
+        'KPEPH2':'KPEPH\\u2082',      'KHPO4H':'KHPO\\u2084H',  'CaCl2':'CaCl\\u2082',
         'NaCl':'NaCl',          'KCl':'KCl',         'HCl':'HCl',
-        'KOH':'KOH',            'NaAzide':'NaN\u2083',
+        'KOH':'KOH',            'NaAzide':'NaN\\u2083',
         'BES':'BES','HEPES':'HEPES','MES':'MES','TES':'TES','Imidazol':'Imidazole',
+        'MgATPH2':'MgATPH\\u2082',   'K2ATPH2':'K\\u2082ATPH\\u2082',
+        'MgADPH':'MgADPH',       'K2ADPH':'K\\u2082ADPH',
+        'K2EGTAH2':'K\\u2082EGTAH\\u2082', 'Na2EGTAH2':'Na\\u2082EGTAH\\u2082',
+        'K2CrP':'K\\u2082PCr',       'NaPEPH2':'NaPEPH\\u2082',
+        'Na2HPO4':'Na\\u2082HPO\\u2084','K2HPO4':'K\\u2082HPO\\u2084',
+        'NaHPO4H':'NaHPO\\u2084H',  'K2BAPTAH2':'K\\u2082BAPTAH\\u2082',
+        'K4HDTA':'K\\u2084HDTA',     'NaOH':'NaOH',
     }
 
     adds_out = {}
@@ -655,6 +824,8 @@ def compute(p):
         'MgATP_mM'      : round(MgATP*1000, 4),
         'MgADP_mM'      : round(MgADP*1000, 4),
         'TotalCl_mM'    : round(total_cl*1000, 4),
+        'Mg_from_salts_mM': round(mg_from_salts()*1000, 4),
+        'salt_forms'    : dict(SF),
         'additions'     : adds_out,
     }
 `;
@@ -717,6 +888,17 @@ async function calculate() {
     buffer:       document.getElementById('buffer').value,
     no_ca_egta:   document.getElementById('no_ca_egta').checked,
     use_hdta:     document.getElementById('use_hdta').checked,
+    salt_forms: {
+      ATP:     document.getElementById('sf_ATP').value,
+      ADP:     document.getElementById('sf_ADP').value,
+      EGTA:    document.getElementById('sf_EGTA').value,
+      BAPTA:   document.getElementById('sf_BAPTA').value,
+      CrP:     document.getElementById('sf_CrP').value,
+      PEP:     document.getElementById('sf_PEP').value,
+      HPO4:    document.getElementById('sf_HPO4').value,
+      HDTA:    document.getElementById('sf_HDTA').value,
+      titrant: document.getElementById('sf_titrant').value,
+    },
   };
 
   try {
@@ -760,6 +942,21 @@ function showResults(r) {
   document.getElementById('r_ionStr').innerHTML = mM(r.ion_str_mM);
   document.getElementById('r_mgatp') .innerHTML = mM(r.MgATP_mM);
   document.getElementById('r_mgadp') .innerHTML = mM(r.MgADP_mM);
+  document.getElementById('r_mgsalt').innerHTML = mM(r.Mg_from_salts_mM);
+
+  // Explain the Mg split when ATP or ADP is supplied as a Mg salt
+  const note = document.getElementById('mgnote');
+  const mgcl = (r.additions['MgCl\u2082'] !== undefined) ? r.additions['MgCl\u2082'] : 0;
+  if (r.Mg_from_salts_mM > 1e-6) {
+    note.style.display = 'block';
+    note.innerHTML =
+      'Total Mg needed is <b>' + r.total_Mg_mM.toFixed(3) + ' mM</b>. Of this, <b>' +
+      r.Mg_from_salts_mM.toFixed(3) + ' mM</b> comes in with the nucleotide salt, ' +
+      'so only <b>' + mgcl.toFixed(3) + ' mM MgCl\u2082</b> is added separately. ' +
+      'Free Mg and free Ca are unchanged by this choice.';
+  } else {
+    note.style.display = 'none';
+  }
 
   const grid = document.getElementById('additions-grid');
   grid.innerHTML = '';
@@ -772,3 +969,4 @@ function showResults(r) {
 </script>
 </body>
 </html>
+
