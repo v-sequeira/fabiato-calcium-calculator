@@ -83,8 +83,8 @@
 <body>
 
 <header>
-  <h1>Fabiato Calcium Solution Calculator</h1>
-  <p>Fabiato &amp; Fabiato 1979 · Fabiato 1981, 1985 · Adapted by Ger Stienen, PhD &amp; Vasco Sequeira, PhD<br><span style="opacity:.75">Martell &amp; Smith constants (I&nbsp;=&nbsp;0.1&nbsp;M, 20&nbsp;°C), corrected for temperature and ionic strength per Bers, Patton &amp; Nuccitelli, Methods Cell Biol 2010;99:1–26</span></p>
+  <h1>Fabiato Calcium Solution Calculator <span style="font-size:.72rem;font-weight:400;opacity:.65">v9</span></h1>
+  <p>Fabiato &amp; Fabiato 1979 · Fabiato 1981, 1985 · Adapted by Ger Stienen, PhD &amp; Vasco Sequeira, PhD<br><span style="opacity:.75">Martell &amp; Smith / NIST constants (I&nbsp;=&nbsp;0.1&nbsp;M, 20&nbsp;°C), corrected per Bers, Patton &amp; Nuccitelli, Methods Cell Biol 2010;99:1–26. Correction evaluated at Smith &amp; Miller ionic equivalents.</span></p>
 </header>
 
 <main>
@@ -98,7 +98,7 @@
     <label><span>pH</span>                <input type="number" id="pH"          value="7.0"  step="0.1"></label>
     <label><span>pCa</span>               <input type="number" id="pCa"         value="10"   step="0.5"></label>
     <label><span>Free Mg (mM)</span>      <input type="number" id="free_Mg"     value="1.0"  step="0.1"></label>
-    <label><span>Target IS (mM)</span>    <input type="number" id="ion_EQ"      value="100"  step="1"></label>
+    <label><span>Target ionic equiv. (mM)</span>    <input type="number" id="ion_EQ"      value="100"  step="1"></label>
   </div>
 
   <div class="section">
@@ -240,7 +240,8 @@
 
   <div class="section">
     <h2>Solution properties</h2>
-    <div class="result-row"><span class="lbl">Target IS</span>      <span class="val" id="r_ionEQ"></span></div>
+    <div class="result-row"><span class="lbl">Target ionic equivalents</span> <span class="val" id="r_ionEQ"></span></div>
+    <div class="result-row"><span class="lbl">Achieved ionic equivalents (drives correction)</span> <span class="val" id="r_ioneq"></span></div>
     <div class="result-row"><span class="lbl">Ionic strength</span> <span class="val" id="r_ionStr"></span></div>
     <div class="result-row"><span class="lbl">Mg·ATP</span>         <span class="val" id="r_mgatp"></span></div>
     <div class="result-row"><span class="lbl">Mg·ADP</span>         <span class="val" id="r_mgadp"></span></div>
@@ -742,7 +743,11 @@ def compute(p):
         Add['KCl'] = 0.0
 
     p_new = ion_EQ
-    for _outer in range(60):
+    _dlogf_used = dlogf
+    _p_prev     = None
+    _converged  = False
+    for _outer in range(200):
+        _dlogf_used = dlogf
         fill_constants()
         update_buffer()
         if MgATP > 0 and Free['Mg'] > 0 and App['ATP']['Mg'] > 0:
@@ -772,13 +777,42 @@ def compute(p):
                        + 0.063546*math.exp(-43.97704*p_new)
                        + 0.695634)
         if use_hdta:
-            TL['HDTA'] = max(0.0, TL['HDTA'] + (ion_EQ - p_new)/2)
-            Add['HDTAH4'] = TL['HDTA']
+            # Damped update: the raw step assumes the free acid, so a salt form
+            # carrying its own counter-ions (K4HDTA) otherwise oscillates.
+            _damp = 0.5 if COUNTER.get(SF['HDTA'], {}) else 1.0
+            TL['HDTA'] = max(0.0, TL['HDTA'] + _damp*(ion_EQ - p_new)/2)
+            for _k in ('HDTAH4', 'K4HDTA'):
+                Add[_k] = 0.0
+            Add[SF['HDTA']] = TL['HDTA']
             sCaMg_hdta   = 1.0 + sum(App['HDTA'][m]*Free[m] for m in ('Ca','Mg'))
             FL['HDTA']   = TL['HDTA'] / max(sCaMg_hdta, 1e-30)
         else:
             Add['KCl'] = max(0.0, Add['KCl'] + ion_EQ - p_new)
-        if abs(p_new - ion_EQ) < 1e-4 * ion_EQ:
+        # Solver is converged when the activity correction and the achieved
+        # ionic equivalents are both stationary. Whether the user's Ie target
+        # is reachable is a separate question, reported via 'target_met'.
+        _stable = (abs(dlogf - _dlogf_used) < 1e-10
+                   and _p_prev is not None and abs(p_new - _p_prev) < 1e-10)
+        _p_prev = p_new
+        if _stable:
+            _converged = True
+            break
+
+    # Final pass: guarantee the returned species were computed with the
+    # converged activity correction and proton concentration.
+    fill_constants()
+    update_buffer()
+    if MgATP > 0 and Free['Mg'] > 0 and App['ATP']['Mg'] > 0:
+        FL['ATP'] = MgATP / (Free['Mg'] * App['ATP']['Mg'])
+    if MgADP > 0 and Free['Mg'] > 0 and App['ADP']['Mg'] > 0:
+        FL['ADP'] = MgADP / (Free['Mg'] * App['ADP']['Mg'])
+    for ln in ('EGTA', 'BAPTA', 'CrP', 'PEP'):
+        if TL[ln] > 0:
+            s = 1.0 + sum(App[ln][m]*Free[m] for m in ('Ca','Mg'))
+            FL[ln] = TL[ln] / max(s, 1e-30)
+    compute_all()
+    for _ in range(40):
+        if adjust_H() < 0.1:
             break
 
     total_cl = (Add['NaCl'] + 2*(Add['CaCl2']+Add['MgCl2'])
@@ -787,7 +821,12 @@ def compute(p):
     if buffer != 'Imidazol':
         n_ion_eq += buf_IS
 
-    ion_str = p_new + n_ion_eq
+    ion_eq  = p_new                 # Smith & Miller ionic equivalents, drives the correction
+    # Strict ionic strength needs c*z^2 per ion. p_new carries only 2c for the
+    # free divalent cations (it is a charge-EQUIVALENT sum), so add the missing
+    # 2c each before the final halving.
+    ion_str = (p_new + n_ion_eq
+               + 2.0*(Free['Ca'] + Free['Mg']))
 
     for ln in LIGANDS:
         if FL[ln] > 0:
@@ -830,9 +869,9 @@ def compute(p):
             adds_out[NICE.get(k, k)] = round(v*1000, 4)
 
     warnings = []
-    if abs(ion_str - ion_EQ) > 0.01 * ion_EQ:
+    if abs(ion_eq - ion_EQ) > 0.01 * ion_EQ:
         warnings.append(
-            f"Achieved ionic strength ({ion_str*1000:.1f} mM) differs from the "
+            f"Achieved ionic equivalents ({ion_eq*1000:.1f} mM) differ from the "
             f"target ({ion_EQ*1000:.1f} mM): buffer, titrant and other fixed "
             f"components already set the ionic strength, so it cannot be lowered "
             f"to the target by adding KCl. Raise the target or lower a component.")
@@ -841,6 +880,8 @@ def compute(p):
             f"Ionic strength ({ion_str*1000:.1f} mM) is below 150 mM. Skinned-fibre "
             f"studies show Ca-independent activation begins below about 100 mM, so "
             f"keep it above 150 mM for a proper relaxing solution.")
+    if not _converged:
+        warnings.append("Solver did not fully converge; treat these numbers with caution.")
     if Total['Mg'] < mg_from_salts() - 1e-9:
         _exc = (mg_from_salts() - Total['Mg'])*1000
         warnings.append(
@@ -856,6 +897,10 @@ def compute(p):
         'pCa'           : pCa,
         'ion_EQ_mM'     : round(ion_EQ*1000, 3),
         'ion_str_mM'    : round(ion_str*1000, 3),
+        'ion_eq_mM'     : round(ion_eq*1000, 3),
+        'converged'     : bool(_converged),
+        'target_met'    : bool(abs(ion_eq - ion_EQ) <= 0.01 * ion_EQ),
+        'iterations'    : int(_outer) + 1,
         'free_Ca_uM'    : round(Free['Ca']*1e6,  5),
         'free_Mg_mM'    : round(Free['Mg']*1000, 4),
         'free_K_mM'     : round(Free['K'] *1000, 4),
@@ -872,6 +917,31 @@ def compute(p):
         'warnings'      : warnings,
         'additions'     : adds_out,
     }
+
+_compute_single = compute
+
+def compute(p):
+    """Wrapper: if the chosen Mg nucleotide salt forces in more Mg than the
+    requested free-Mg target allows, solve for the free Mg the recipe can
+    actually deliver instead of silently returning an impossible state."""
+    r = _compute_single(p)
+    if r.get('Mg_from_salts_mM', 0.0) > r.get('total_Mg_mM', 0.0) + 1e-6:
+        lo = float(p.get('free_Mg', 1e-3))
+        hi = max(lo * 200.0, 0.05)
+        for _ in range(80):
+            mid = 0.5 * (lo + hi)
+            q = dict(p); q['free_Mg'] = mid
+            rr = _compute_single(q)
+            if rr['Mg_from_salts_mM'] > rr['total_Mg_mM']:
+                lo = mid
+            else:
+                hi = mid
+        r['free_Mg_achievable_mM'] = round(0.5 * (lo + hi) * 1000, 4)
+        r['free_Mg_target_unreachable'] = True
+    else:
+        r['free_Mg_target_unreachable'] = False
+    return r
+
 `;
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -976,7 +1046,16 @@ function uM(v, d=4)  { return v.toFixed(d) + ' <span class="unit">µM</span>'; }
 function showResults(r) {
   document.getElementById('results').style.display = 'block';
   document.getElementById('r_freeCa').innerHTML = uM(r.free_Ca_uM);
-  document.getElementById('r_freeMg').innerHTML = mM(r.free_Mg_mM);
+  // When a Mg nucleotide salt forces in more Mg than the target allows, the
+  // requested free Mg is unreachable. Show the value the recipe can deliver.
+  if (r.free_Mg_target_unreachable && r.free_Mg_achievable_mM !== undefined) {
+    document.getElementById('r_freeMg').innerHTML =
+      mM(r.free_Mg_achievable_mM) +
+      ' <span class="unit" style="color:#b45309">(target ' +
+      r.free_Mg_mM.toFixed(3) + ' mM not reachable)</span>';
+  } else {
+    document.getElementById('r_freeMg').innerHTML = mM(r.free_Mg_mM);
+  }
   document.getElementById('r_freeK') .innerHTML = mM(r.free_K_mM);
   document.getElementById('r_freeNa').innerHTML = mM(r.free_Na_mM);
   document.getElementById('r_totCa') .innerHTML = mM(r.total_Ca_mM);
@@ -985,6 +1064,7 @@ function showResults(r) {
   document.getElementById('r_totNa') .innerHTML = mM(r.total_Na_mM);
   document.getElementById('r_totCl') .innerHTML = mM(r.TotalCl_mM);
   document.getElementById('r_ionEQ') .innerHTML = mM(r.ion_EQ_mM);
+  document.getElementById('r_ioneq') .innerHTML = mM(r.ion_eq_mM);
   document.getElementById('r_ionStr').innerHTML = mM(r.ion_str_mM);
   document.getElementById('r_mgatp') .innerHTML = mM(r.MgATP_mM);
   document.getElementById('r_mgadp') .innerHTML = mM(r.MgADP_mM);
@@ -995,11 +1075,26 @@ function showResults(r) {
   const mgcl = (r.additions['MgCl\u2082'] !== undefined) ? r.additions['MgCl\u2082'] : 0;
   if (r.Mg_from_salts_mM > 1e-6) {
     note.style.display = 'block';
-    note.innerHTML =
-      'Total Mg needed is <b>' + r.total_Mg_mM.toFixed(3) + ' mM</b>. Of this, <b>' +
-      r.Mg_from_salts_mM.toFixed(3) + ' mM</b> comes in with the nucleotide salt, ' +
-      'so only <b>' + mgcl.toFixed(3) + ' mM MgCl\u2082</b> is added separately. ' +
-      'Free Mg and free Ca are unchanged by this choice.';
+    if (r.free_Mg_target_unreachable) {
+      note.className = 'note warn';
+      note.innerHTML =
+        'This salt form brings in <b>' + r.Mg_from_salts_mM.toFixed(3) +
+        ' mM Mg</b> with the nucleotide, more than the <b>' +
+        r.total_Mg_mM.toFixed(3) + ' mM</b> the recipe needs. MgCl\u2082 is ' +
+        'set to zero and the free Mg cannot be brought down to the target: ' +
+        'this recipe delivers <b>' + r.free_Mg_achievable_mM.toFixed(3) +
+        ' mM</b> free Mg, not ' + r.free_Mg_mM.toFixed(3) + ' mM. ' +
+        'Free Ca and every other line are computed at the target, not at the ' +
+        'achievable free Mg, so do not use this recipe as printed. Supply part ' +
+        'of the nucleotide as the Na or K salt, or raise the free-Mg target.';
+    } else {
+      note.className = 'note';
+      note.innerHTML =
+        'Total Mg needed is <b>' + r.total_Mg_mM.toFixed(3) + ' mM</b>. Of this, <b>' +
+        r.Mg_from_salts_mM.toFixed(3) + ' mM</b> comes in with the nucleotide salt, ' +
+        'so only <b>' + mgcl.toFixed(3) + ' mM MgCl\u2082</b> is added separately. ' +
+        'Free Mg and free Ca are unchanged by this choice.';
+    }
   } else {
     note.style.display = 'none';
   }
