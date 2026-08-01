@@ -73,6 +73,7 @@
   .note { background: #f0f6ff; border: 1px solid #cfe0f5; border-radius: 5px;
           padding: 8px 11px; font-size: 12.5px; color: #24466e;
           line-height: 1.5; margin-top: 10px; }
+  .note.warn { background: #fff8e6; border-color: #f5d78e; color: #7c5c00; }
   hr.sep { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
   #errbox { background: #fdf0f0; border: 1px solid #e8b0b0; color: #8b0000;
             border-radius: 5px; padding: 8px 12px; margin-top: 8px;
@@ -83,7 +84,7 @@
 
 <header>
   <h1>Fabiato Calcium Solution Calculator</h1>
-  <p>Fabiato &amp; Fabiato 1979 · Fabiato 1981, 1985 · Adapted by Ger Stienen, PhD &amp; Vasco Sequeira, PhD</p>
+  <p>Fabiato &amp; Fabiato 1979 · Fabiato 1981, 1985 · Adapted by Ger Stienen, PhD &amp; Vasco Sequeira, PhD<br><span style="opacity:.75">Martell &amp; Smith constants (I&nbsp;=&nbsp;0.1&nbsp;M, 20&nbsp;°C), corrected for temperature and ionic strength per Bers, Patton &amp; Nuccitelli, Methods Cell Biol 2010;99:1–26</span></p>
 </header>
 
 <main>
@@ -247,6 +248,7 @@
   </div>
 
   <div id="mgnote" class="note" style="display:none"></div>
+  <div id="warnbox" class="note warn" style="display:none"></div>
 
   <hr class="sep">
   <h2>Additions required (mM)</h2>
@@ -401,11 +403,14 @@ def compute(p):
         FL['HDTA'] = TL['HDTA']
 
     def logfi_at(I):
+        if I <= 0:
+            return 0.0
         Ti  = T / 10.0
         Tl  = min(int(Ti), 4)
         EpT = (EPSILON[Tl] + (Ti-Tl)*(EPSILON[Tl+1]-EPSILON[Tl])) * (T+273)
         return ACT_CONST / EpT / math.sqrt(EpT) * I * (1.0/(math.sqrt(I)+I) - 0.25)
 
+    I_REF  = 0.1        # ionic strength of the tabulated stability constants
     dlogf  = 0.0
     GammaT = 0.522932 * math.exp(0.0327016*T) + 4.015942
     H = pw(-pH) / (0.145045*math.exp(-GammaT*ion_EQ)
@@ -569,13 +574,19 @@ def compute(p):
         for ln in ('ATP', 'ADP', 'HPO4'):
             if FL[ln] > 0:
                 kk += App[ln]['K'] * FL[ln]
+        nK_PEP  = COUNTER.get(SF['PEP'], {}).get('K',  0)
+        nNa_PEP = COUNTER.get(SF['PEP'], {}).get('Na', 0)
         if TL['PEP'] > 0:
             sCaMg = 1.0 + Free['Ca']*App['PEP']['Ca'] + Free['Mg']*App['PEP']['Mg']
-            kk2   = kk * sCaMg / max(App['PEP']['K'], 1e-30)
-            x     = kk2 + tK
-            FL['PEP']  = 0.5*(math.sqrt(x*x + 4*kk2*TL['PEP']) - x) / sCaMg
-            Free['K']  = (TL['PEP']/max(FL['PEP'],1e-30) - sCaMg) / max(App['PEP']['K'],1e-30)
-            Total['K'] = tK + TL['PEP']
+            if nK_PEP > 0:
+                kk2   = kk * sCaMg / max(App['PEP']['K'], 1e-30)
+                x     = kk2 + tK
+                FL['PEP']  = 0.5*(math.sqrt(x*x + 4*kk2*TL['PEP']) - x) / sCaMg
+                Free['K']  = (TL['PEP']/max(FL['PEP'],1e-30) - sCaMg) / max(App['PEP']['K'],1e-30)
+            else:
+                FL['PEP']  = TL['PEP'] / max(sCaMg, 1e-30)
+                Free['K']  = tK / kk if kk > 0 else 0.0
+            Total['K'] = tK + nK_PEP * TL['PEP']
         else:
             FL['PEP']  = 0.0
             Free['K']  = tK / kk if kk > 0 else 0.0
@@ -593,7 +604,7 @@ def compute(p):
             if a > 0:
                 FL['ATP'] = MgATP / (Free['Mg'] * a)
             MATP  = 1.0 + sum(Free[m]*App['ATP'][m] for m in ('Ca','Mg','K'))
-            rNa   = rest_na()
+            rNa   = rest_na() + nNa_PEP * TL['PEP']
             nNa   = COUNTER.get(SF['ATP'], {}).get('Na', 0)
             if nNa:
                 # ATP enters as its Na salt: Na from ATP is part of the unknown
@@ -616,7 +627,7 @@ def compute(p):
                 Add[SF['ATP']] = TL['ATP']
                 Total['Na'] = rNa
         else:
-            rNa        = rest_na()
+            rNa        = rest_na() + nNa_PEP * TL['PEP']
             Free['Na'] = rNa / tNa if tNa > 0 else 0.0
             Total['Na'] = rNa
 
@@ -749,6 +760,17 @@ def compute(p):
         p_new = H + Free['Na'] + Free['K'] + (Free['Ca']+Free['Mg'])*2
         if buffer == 'Imidazol':
             p_new += buf_IS
+        # Self-consistent ionic-strength correction: refresh the activity
+        # coefficient and proton activity at the achieved ionic strength so
+        # the next fill_constants() pass corrects the binding constants.
+        if p_new > 0:
+            # Martell & Smith constants are tabulated at I = 0.1 M, 20 C.
+            # Bers/Patton eq: log K' = log K + 2*z_cat*z_an*(log f_ref - log f_I)
+            # so the correction runs FROM I_ref = 0.1 TO the achieved I.
+            dlogf = logfi_at(I_REF) - logfi_at(p_new)
+        H = pw(-pH) / (0.145045*math.exp(-GammaT*p_new)
+                       + 0.063546*math.exp(-43.97704*p_new)
+                       + 0.695634)
         if use_hdta:
             TL['HDTA'] = max(0.0, TL['HDTA'] + (ion_EQ - p_new)/2)
             Add['HDTAH4'] = TL['HDTA']
@@ -765,7 +787,7 @@ def compute(p):
     if buffer != 'Imidazol':
         n_ion_eq += buf_IS
 
-    ion_str = p_new + (Free['Ca']+Free['Mg'])*2 + n_ion_eq
+    ion_str = p_new + n_ion_eq
 
     for ln in LIGANDS:
         if FL[ln] > 0:
@@ -807,6 +829,27 @@ def compute(p):
         if abs(v) > 1e-9 or k == 'KCl':
             adds_out[NICE.get(k, k)] = round(v*1000, 4)
 
+    warnings = []
+    if abs(ion_str - ion_EQ) > 0.01 * ion_EQ:
+        warnings.append(
+            f"Achieved ionic strength ({ion_str*1000:.1f} mM) differs from the "
+            f"target ({ion_EQ*1000:.1f} mM): buffer, titrant and other fixed "
+            f"components already set the ionic strength, so it cannot be lowered "
+            f"to the target by adding KCl. Raise the target or lower a component.")
+    if ion_str < 0.150:
+        warnings.append(
+            f"Ionic strength ({ion_str*1000:.1f} mM) is below 150 mM. Skinned-fibre "
+            f"studies show Ca-independent activation begins below about 100 mM, so "
+            f"keep it above 150 mM for a proper relaxing solution.")
+    if Total['Mg'] < mg_from_salts() - 1e-9:
+        _exc = (mg_from_salts() - Total['Mg'])*1000
+        warnings.append(
+            f"The Mg salt of ATP/ADP forces in {mg_from_salts()*1000:.2f} mM Mg but only "
+            f"{Total['Mg']*1000:.2f} mM is needed, an excess of {_exc:.2f} mM. MgCl2 is set to "
+            f"zero and the free-Mg target of {free_Mg*1000:.2f} mM CANNOT be reached with this "
+            f"salt form: actual free Mg will be higher. Use Na2ATP/K2ATP for part of the ATP, "
+            f"or raise the free-Mg target.")
+
     return {
         'temperature'   : T,
         'pH'            : pH,
@@ -826,6 +869,7 @@ def compute(p):
         'TotalCl_mM'    : round(total_cl*1000, 4),
         'Mg_from_salts_mM': round(mg_from_salts()*1000, 4),
         'salt_forms'    : dict(SF),
+        'warnings'      : warnings,
         'additions'     : adds_out,
     }
 `;
@@ -864,9 +908,11 @@ async function calculate() {
   if (!pyodideReady) return;
   const btn    = document.getElementById('calc');
   const errbox = document.getElementById('errbox');
+  const warnbox = document.getElementById('warnbox');
   btn.disabled = true;
   btn.textContent = 'Calculating…';
   errbox.style.display = 'none';
+  warnbox.style.display = 'none';
 
   const p = {
     temperature: +document.getElementById('temperature').value,
@@ -958,6 +1004,14 @@ function showResults(r) {
     note.style.display = 'none';
   }
 
+  const warnbox = document.getElementById('warnbox');
+  if (r.warnings && r.warnings.length) {
+    warnbox.style.display = 'block';
+    warnbox.innerHTML = '<b>Note:</b> ' + r.warnings.join(' ');
+  } else {
+    warnbox.style.display = 'none';
+  }
+
   const grid = document.getElementById('additions-grid');
   grid.innerHTML = '';
   for (const [name, val] of Object.entries(r.additions)) {
@@ -969,4 +1023,3 @@ function showResults(r) {
 </script>
 </body>
 </html>
-
