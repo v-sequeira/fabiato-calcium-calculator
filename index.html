@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- build: v11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -83,7 +84,7 @@
 <body>
 
 <header>
-  <h1>Fabiato Calcium Solution Calculator <span style="font-size:.72rem;font-weight:400;opacity:.65">v9</span></h1>
+  <h1>Fabiato Calcium Solution Calculator</h1>
   <p>Fabiato &amp; Fabiato 1979 · Fabiato 1981, 1985 · Adapted by Ger Stienen, PhD &amp; Vasco Sequeira, PhD<br><span style="opacity:.75">Martell &amp; Smith / NIST constants (I&nbsp;=&nbsp;0.1&nbsp;M, 20&nbsp;°C), corrected per Bers, Patton &amp; Nuccitelli, Methods Cell Biol 2010;99:1–26. Correction evaluated at Smith &amp; Miller ionic equivalents.</span></p>
 </header>
 
@@ -922,8 +923,12 @@ _compute_single = compute
 
 def compute(p):
     """Wrapper: if the chosen Mg nucleotide salt forces in more Mg than the
-    requested free-Mg target allows, solve for the free Mg the recipe can
-    actually deliver instead of silently returning an impossible state."""
+    requested free-Mg target allows, bisect for the LOWEST free-Mg target that
+    is compatible with that salt form (the feasibility floor, returned as
+    free_Mg_achievable_mM) and flag the requested target as unreachable.
+    This is NOT the free Mg the printed mixture would deliver. That value is
+    higher, because the printed mixture also carries the larger nucleotide
+    total that was computed at the unreachable target."""
     r = _compute_single(p)
     if r.get('Mg_from_salts_mM', 0.0) > r.get('total_Mg_mM', 0.0) + 1e-6:
         lo = float(p.get('free_Mg', 1e-3))
@@ -1047,12 +1052,11 @@ function showResults(r) {
   document.getElementById('results').style.display = 'block';
   document.getElementById('r_freeCa').innerHTML = uM(r.free_Ca_uM);
   // When a Mg nucleotide salt forces in more Mg than the target allows, the
-  // requested free Mg is unreachable. Show the value the recipe can deliver.
-  if (r.free_Mg_target_unreachable && r.free_Mg_achievable_mM !== undefined) {
+  // requested free Mg is unreachable. Flag it; do not substitute another number.
+  if (r.free_Mg_target_unreachable) {
     document.getElementById('r_freeMg').innerHTML =
-      mM(r.free_Mg_achievable_mM) +
-      ' <span class="unit" style="color:#b45309">(target ' +
-      r.free_Mg_mM.toFixed(3) + ' mM not reachable)</span>';
+      mM(r.free_Mg_mM) +
+      ' <span class="unit" style="color:#b45309">(not reachable with this salt form)</span>';
   } else {
     document.getElementById('r_freeMg').innerHTML = mM(r.free_Mg_mM);
   }
@@ -1080,13 +1084,14 @@ function showResults(r) {
       note.innerHTML =
         'This salt form brings in <b>' + r.Mg_from_salts_mM.toFixed(3) +
         ' mM Mg</b> with the nucleotide, more than the <b>' +
-        r.total_Mg_mM.toFixed(3) + ' mM</b> the recipe needs. MgCl\u2082 is ' +
-        'set to zero and the free Mg cannot be brought down to the target: ' +
-        'this recipe delivers <b>' + r.free_Mg_achievable_mM.toFixed(3) +
-        ' mM</b> free Mg, not ' + r.free_Mg_mM.toFixed(3) + ' mM. ' +
-        'Free Ca and every other line are computed at the target, not at the ' +
-        'achievable free Mg, so do not use this recipe as printed. Supply part ' +
-        'of the nucleotide as the Na or K salt, or raise the free-Mg target.';
+        r.total_Mg_mM.toFixed(3) + ' mM</b> the recipe needs, so MgCl\u2082 is set ' +
+        'to zero and the free-Mg target of ' + r.free_Mg_mM.toFixed(3) +
+        ' mM cannot be met. The lowest free Mg you can target with this salt ' +
+        'form here is <b>' + r.free_Mg_achievable_mM.toFixed(3) + ' mM</b>. ' +
+        'Every line below is still computed at the unreachable target, so this ' +
+        'recipe cannot be prepared as printed. Raise the free-Mg target to at ' +
+        'least ' + r.free_Mg_achievable_mM.toFixed(3) + ' mM, or supply part of ' +
+        'the nucleotide as the Na or K salt.';
     } else {
       note.className = 'note';
       note.innerHTML =
